@@ -20,32 +20,32 @@ class MonteCarloTreeSearchConnectFour:
         self.N = {}
         self.main_player = main_player
         self.rng = rng
+        self.c = np.sqrt(2)
         self.root_node = {
+            "main":True,
             "untried": self.legal_actions(s0),
             "board": s0,
             "player":main_player,
             "children":{},
+            "Q":0,
+            "N":0,
+            "W":0,
             "parent": None
         }
 
-    def eta(self, player):
-        return player*-1
-    
     def run(self,time_limit=10):
-        
-        # Primera iteración
-        node_s = self.root_node
+    
         start = time.time()
         # Comienza bucle While
         
 
-        while time.time() - start <=10:
+        while time.time() - start <=time_limit:
             node_s = self.select() 
 
             node_s, node_s_next = self.expand(node_s)
-            leaf_node = self.simulate(node_s_next)
-            self.backpropagate(leaf_node)
-            print("Atrapado en WHILE en RUN")
+            leaf_node, winner = self.simulate(node_s_next)
+            self.backpropagate(leaf_node, winner)
+
         # while tiempo actual < timelimit
         #   select()
         #   expand()
@@ -55,41 +55,46 @@ class MonteCarloTreeSearchConnectFour:
     
     def select(self) -> dict: 
         # Si hay acciones que no se han intentado, no se selecciona nodo.
-        if len(self.root_node['untried']) != 0:
+        if len(self.root_node['untried']) > 0:
             print("Se devolvió raíz")
             return self.root_node
-       
-        print("Paso por Select P2!!!!")
+        
         # Aca se debe implementar lo de ucb
         temp_node = self.root_node
+        while len(temp_node['untried']) == 0 and len(temp_node['children']) > 0:
 
-        while True:
-            print("Atrapado en WHILE en SELECT")
-            if len(temp_node['children']) ==0:
-                return temp_node
+            parent_N = max(1,temp_node['N'])
+    
+            q_values = []
+        
+            children =list(temp_node['children'].values())
 
-            for a,new_node in temp_node['children'].items():
-                pass
-        actions = self.legal_actions(self.s0)
-        # Mientras que el diccionario temporal no esté vacío, la idea es recorrer nodo por nodo
-        # Cada nodo será un diccionario
-        #while not temp_dict:
-        #
+            for node in children:
+                if node['N'] == 0:
+                    return node
+                q_values.append(node['Q']+self.c*np.sqrt(np.log(parent_N)/(node['N'])))
+
+            best_q = np.argmax(q_values)
+            temp_node = children[best_q]
 
 
-    def expand(self, s: dict) -> dict:
-                
+        return temp_node
+
+    def expand(self, s: dict) -> tuple:
+
         rn = self.rng.randint(0,len(s['untried']))
         a = s['untried'][rn]
 
-        new_s = self.step(s['board'],a,s['player'])
+        new_s = self.step(s['board'].copy(),a,s['player'])
 
         new_node = {
             "untried": self.legal_actions(new_s),
             "board": new_s,
             "player": s['player']*-1,
+            "tie":False,
             "N":0,
             "W":0,
+            "Q":0,
             "children":{},
             "parent": s
         }
@@ -107,16 +112,15 @@ class MonteCarloTreeSearchConnectFour:
         # last_player = -1
         last_player = s['player']*-1
         # Si ya había ganado el jugador anterior
-        _, is_terminal = self.is_terminal_state(s['board'], last_player)
+        is_tie, is_terminal = self.is_terminal_state(s['board'].copy(), last_player)
         if is_terminal:
-            return s
+            return s,0
         
         # s representa el jugador enemigo en el tablero 2 (primera iteración del MCTS)
         actual_player = s['player']
 
-        board = s['board']
+        board = s['board'].copy()
 
-        temp_node = s
         # Comenzamos a hacer la simulación
         while True:
             # seleccionamos accion aleatoria
@@ -124,57 +128,56 @@ class MonteCarloTreeSearchConnectFour:
             rn = self.rng.randint(0,len(actions))
             a = actions[rn]
 
-
+            
             # cargamos nuevo tablero
             board = self.step(board,a,actual_player)
 
-            actual_player = actual_player*-1
+            last_player = actual_player
 
-            new_node = {
-                "untried": self.legal_actions(board),
-                "board": board,
-                "player": actual_player,
-                "N":0,
-                "W":0,
-                "tie": False,
-                "children":{},
-                "parent": temp_node
-            }
-
-            temp_node['children'][a] = new_node
-            temp_node = new_node
-
-            # verificamos que se acabo el juego
-            is_tie, is_terminal = self.is_terminal_state(board,actual_player)
+            is_tie, is_terminal = self.is_terminal_state(board,last_player)
             if is_terminal:
                 if is_tie:
-                    temp_node['tie'] = True
-                break
-        return temp_node
+                    return s,0
+                else:
+                    return s,last_player
+                
+            actual_player = actual_player*-1
+
             
 
-    def backpropagate(self, leaf: dict):
+    def backpropagate(self, leaf: dict, winner):
         # recordar hacer la excepción de cuando hay empate, reward = 0
         temp_node = leaf
 
         # El jugador anterior al estado final es el ganador
-        turn = leaf['player']
-        winner = leaf['player']*-1
-
+        reward = 0
         # el estado final se le coloca al jugador que tiene el board final
-        while temp_node['parent'] == None:
+        while temp_node is not None:
+
             
-            if not temp_node['tie']:
-                if turn == winner:
-                    temp_node['W']+= 1
-                else:
-                    temp_node['W']-=1          
+            parent = temp_node['parent']
+            mover = 0
+
+            if parent is not None:
+                mover = parent['player']
+            else:
+                mover = None
+
+            if winner == 0:
+                reward = 0
+            elif mover is None:
+                reward = 0
+            elif mover == winner:
+                reward = 1
+            else:
+                reward = -1
 
             temp_node['N']+=1
+            temp_node['W']+=reward
+            temp_node['Q']= temp_node['W']/temp_node['N']
+                
 
-            parent = temp_node['parent']
-            parent['N']+=1      
-            
+            temp_node = temp_node['parent'] 
 
 
 
@@ -189,7 +192,7 @@ class MonteCarloTreeSearchConnectFour:
                 if s[r,c] != 0:
                     counter+=1
             
-            if counter < 6:
+            if counter < rows:
                 available.append(c)
 
         return available
@@ -209,6 +212,7 @@ class MonteCarloTreeSearchConnectFour:
 
         return s
 
+    
     def is_terminal_state(self, s : np.ndarray,player) -> tuple:
         
         rows, columns = s.shape
@@ -233,7 +237,7 @@ class MonteCarloTreeSearchConnectFour:
                 
         # Verificar Diagonales (Derecha)
         for c in range(columns-3):
-            for r in range(3,rows-3):
+            for r in range(3,rows):
                 if s[r,c] == player and s[r-1,c+1] == player and s[r-2,c+2] == player and s[r-3,c+3] == player:
                     return (False,True)
 
@@ -241,6 +245,5 @@ class MonteCarloTreeSearchConnectFour:
             return (True,True)
 
         return False, False
-
 
 
