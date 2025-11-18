@@ -1,3 +1,4 @@
+#play.py
 from mcts import MonteCarloTreeSearchConnectFour
 import numpy as np
 
