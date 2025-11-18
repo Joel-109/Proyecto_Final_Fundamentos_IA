@@ -7,7 +7,6 @@ from mcts import MonteCarloTreeSearchConnectFour
 State = Hashable
 Action = Hashable
 
-
 class MyPolicy:
     def __init__(self, mcts: MonteCarloTreeSearchConnectFour, time_limit: float = 1.0):
         """
