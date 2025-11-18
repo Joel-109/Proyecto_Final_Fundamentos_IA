@@ -1,79 +1,89 @@
 import numpy as np
-import time
-from our_policy import MyPolicy
 from mcts import MonteCarloTreeSearchConnectFour
+from our_policy import MyPolicy
+import numpy as np
 
-def render(board):
-    print("\nTABLERO:")
+def print_board(board):
+    """Imprimir el tablero de forma bonita."""
+    print("\nTablero:")
     for row in board:
-        print(row)
-    print("COLUMNAS: 0 1 2 3 4 5 6\n")
+        print(" ".join(["." if x == 0 else ("X" if x == 1 else "O") for x in row]))
+    print("0 1 2 3 4 5 6\n")
 
+def play_game(policy, first_player=1):
+    """
+    policy: objeto MyPolicy
+    first_player: quién empieza (1 humano, -1 IA)
+    """
 
-def play_game(mcts, policy, human_player=1):
-    """
-    human_player = 1  → humano juega con fichas 1
-    human_player = -1 → humano juega con fichas -1
-    """
-    state = mcts.s0.copy()
-    current_player = mcts.main_player  # empieza el main_player
+    board = np.zeros((6,7), dtype=int)
+    current_player = first_player
+
+    print("\n=== INICIA EL JUEGO ===")
+    print("Jugador 1 = X")
+    print("Jugador -1 = O\n")
+
+    print_board(board)
 
     while True:
-        render(state)
 
-        # Comprobar terminal
-        last_player = -current_player
-        tie, terminal = mcts.is_terminal_state(state, last_player)
-        if terminal:
-            if tie:
-                print("EMPATE!")
+        # ---------------------------
+        # TURNO HUMANO
+        # ---------------------------
+        if current_player == 1:
+            while True:
+                try:
+                    col = int(input("Tu movimiento (0-6): "))
+                    if col in policy.mcts.legal_actions(board):
+                        break
+                    else:
+                        print("Columna llena o inválida, usa otra.")
+                except:
+                    print("Entrada inválida.")
+            
+            # Aplicamos movimiento humano
+            board = policy.mcts.step(board, col, current_player)
+
+            print("\nHiciste movimiento en columna", col)
+            print_board(board)
+
+        # ---------------------------
+        # TURNO IA (MCTS)
+        # ---------------------------
+        else:
+            print("\nTurno de la IA. Pensando...")
+
+            action = policy.act(board.copy(), current_player)
+            board = policy.mcts.step(board, action, current_player)
+
+            print("IA juega en columna", action)
+            print_board(board)
+
+        # ---------------------------
+        # VERIFICAR VICTORIA
+        # ---------------------------
+        is_tie, is_terminal = policy.mcts.is_terminal_state(board, current_player)
+
+        if is_terminal:
+            if is_tie:
+                print("\n¡EMPATE!")
             else:
-                print(f"Gana el jugador {last_player}")
+                if current_player == 1:
+                    print("\n¡GANASTE! 🎉")
+                else:
+                    print("\nPERDISTE, gana la IA 😈")
             break
 
-        # ----------------
-        # TURNO DEL HUMANO
-        # ----------------
-        if current_player == human_player:
-            print("Turno HUMANO")
-            actions = mcts.legal_actions(state)
-            print("Acciones posibles:", actions)
-
-            col = int(input("Seleccione columna: "))
-
-            while col not in actions:
-                col = int(input("Columna inválida, intente de nuevo: "))
-
-            # Aplicar acción
-            state = mcts.step(state.copy(), col, current_player)
-
-        # ----------------
-        # TURNO DEL MCTS
-        # ----------------
-        else:
-            print("\nTurno MCTS... pensando...")
-
-            # Decidir acción con política
-            action = policy.act(state.copy())
-
-            print(f"MCTS juega columna: {action}")
-
-            # Aplicar acción
-            state = mcts.step(state.copy(), action, current_player)
-
-        # Cambiar jugador
+        # Cambiar turno
         current_player *= -1
 
-rng = np.random.RandomState(1)
+    print("\n=== FIN DEL JUEGO ===")
 
-# Estado inicial vacío
+
+rng = np.random.RandomState(42)
 s0 = np.zeros((6,7), dtype=int)
 
-# Crear el MCTS
-mcts = MonteCarloTreeSearchConnectFour(s0, main_player=1, rng=rng)
-
-# Crear política
+mcts = MonteCarloTreeSearchConnectFour(s0, main_player=-1, rng=rng)
 policy = MyPolicy(mcts)
 
-# Jugar
-play_game(mcts, policy, human_player=1)
+play_game(policy, first_player=1)

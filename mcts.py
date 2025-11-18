@@ -33,6 +33,18 @@ class MonteCarloTreeSearchConnectFour:
             "parent": None
         }
 
+    def set_root(self, board, player):
+        self.root_node = {
+            "main": True,
+            "untried": self.legal_actions(board),
+            "board": board.copy(),
+            "player": player,
+            "children": {},
+            "Q": 0,
+            "N": 0,
+            "W": 0,
+            "parent": None
+        }
     def run(self,time_limit=10):
     
         start = time.time()
@@ -53,125 +65,110 @@ class MonteCarloTreeSearchConnectFour:
         #   backpropagate()
 
     
-    def select(self) -> dict: 
-        # Si hay acciones que no se han intentado, no se selecciona nodo.
-        if len(self.root_node['untried']) > 0:
-            print("Se devolvió raíz")
-            return self.root_node
-        
-        # Aca se debe implementar lo de ucb
-        temp_node = self.root_node
-        while len(temp_node['untried']) == 0 and len(temp_node['children']) > 0:
+    def select(self):
+        node = self.root_node
 
-            parent_N = max(1,temp_node['N'])
-    
-            q_values = []
-        
-            children =list(temp_node['children'].values())
+        while True:
 
-            for node in children:
-                if node['N'] == 0:
-                    return node
-                q_values.append(node['Q']+self.c*np.sqrt(np.log(parent_N)/(node['N'])))
+            # 1) Si hay acciones sin intentar → devolver nodo
+            if len(node["untried"]) > 0:
+                return node
 
-            best_q = np.argmax(q_values)
-            temp_node = children[best_q]
+            # 2) Si no tiene hijos → nodo terminal o mal expandido
+            if len(node["children"]) == 0:
+                return node
+
+            # 3) UCB
+            parent_N = max(1, node["N"])
+            children = list(node["children"].values())
+
+            # Preferir hijo no visitado
+            for c in children:
+                if c["N"] == 0:
+                    return c
+
+            ucb_scores = [
+                c["Q"] + self.c * np.sqrt(np.log(parent_N) / c["N"])
+                for c in children
+            ]
+
+            node = children[np.argmax(ucb_scores)]
 
 
-        return temp_node
 
     def expand(self, s: dict) -> tuple:
 
+        # 🎯 1. Si el nodo NO tiene acciones disponibles → NO expandir
+        if len(s['untried']) == 0:
+            # Esto no debería pasar, pero si pasa devolvemos el nodo tal cual
+            return s, s
+
+        # 🎯 2. Acción aleatoria
         rn = self.rng.randint(0,len(s['untried']))
         a = s['untried'][rn]
 
-        new_s = self.step(s['board'].copy(),a,s['player'])
+        new_s = self.step(s['board'].copy(), a, s['player'])
 
         new_node = {
             "untried": self.legal_actions(new_s),
             "board": new_s,
-            "player": s['player']*-1,
-            "tie":False,
-            "N":0,
-            "W":0,
-            "Q":0,
-            "children":{},
+            "player": s['player'] * -1,
+            "tie": False,
+            "N": 0,
+            "W": 0,
+            "Q": 0,
+            "children": {},
             "parent": s
         }
 
         s['untried'].remove(a)
-
         s['children'][a] = new_node
 
-        return s,new_node
-
+        return s, new_node
 
         # Cuando se termine de expandir, se cambia de jugador    
 
-    def simulate(self, s : dict):
-        # last_player = -1
-        last_player = s['player']*-1
-        # Si ya había ganado el jugador anterior
-        is_tie, is_terminal = self.is_terminal_state(s['board'].copy(), last_player)
-        if is_terminal:
-            if is_tie:
-                return s,0
-            else:
-                return s,last_player
-        
-        # s representa el jugador enemigo en el tablero 2 (primera iteración del MCTS)
-        actual_player = s['player']
+    def simulate(self, node):
+        board = node["board"].copy()
+        player = node["player"]
 
-        board = s['board'].copy()
-
-        # Comenzamos a hacer la simulación
         while True:
-            # seleccionamos accion aleatoria
             actions = self.legal_actions(board)
-            rn = self.rng.randint(0,len(actions))
-            a = actions[rn]
+            a = self.rng.choice(actions)
 
-            
-            # cargamos nuevo tablero
-            board = self.step(board,a,actual_player)
+            board = self.step(board, a, player)
 
-            last_player = actual_player
+            # Revisar terminalidad DESPUÉS del movimiento
+            is_tie, is_terminal = self.is_terminal_state(board, player)
 
-            is_tie, is_terminal = self.is_terminal_state(board,last_player)
             if is_terminal:
                 if is_tie:
-                    return s,0
+                    return node, 0
                 else:
-                    return s,last_player
-                
-            actual_player = actual_player*-1
+                    return node, player
 
-            
+            player *= -1
 
-    def backpropagate(self, leaf: dict, winner):
-        # recordar hacer la excepción de cuando hay empate, reward = 0
-        temp_node = leaf
 
-        # El jugador anterior al estado final es el ganador
-        reward = 0
-        # el estado final se le coloca al jugador que tiene el board final
-        while temp_node is not None:
-            temp_node['N']+=1
+    def backpropagate(self, leaf, winner):
+        node = leaf
 
-            
+        while node is not None:
+
+            node["N"] += 1
+
             if winner == 0:
                 reward = 0
+            elif winner == self.main_player:
+                reward = 1
             else:
-                if winner == temp_node['player']:
-                    reward = 1
-                else:
-                    reward = -1
-                    
-            temp_node['W']+=reward
-            temp_node['Q']= temp_node['W']/temp_node['N']
-                
+                reward = -1
 
-            temp_node = temp_node['parent'] 
+            node["W"] += reward
+            node["Q"] = node["W"] / node["N"]
+
+            node = node["parent"]
+
 
 
 
