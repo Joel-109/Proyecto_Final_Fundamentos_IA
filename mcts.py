@@ -20,12 +20,12 @@ class MonteCarloTreeSearchConnectFour:
         self.N = {}
         self.main_player = main_player
         self.rng = rng
-        self.c = np.sqrt(2)
+        self.c = np.sqrt(2)/2
         self.root_node = {
             "main":True,
-            "untried": self.legal_actions(s0),
-            "board": s0,
-            "player":main_player,
+            "untried": self.legal_actions(s0), 
+            "board": s0, 
+            "player":main_player, 
             "children":{},
             "Q":0,
             "N":0,
@@ -114,7 +114,10 @@ class MonteCarloTreeSearchConnectFour:
         # Si ya había ganado el jugador anterior
         is_tie, is_terminal = self.is_terminal_state(s['board'].copy(), last_player)
         if is_terminal:
-            return s,0
+            if is_tie:
+                return s,0
+            else:
+                return s,last_player
         
         # s representa el jugador enemigo en el tablero 2 (primera iteración del MCTS)
         actual_player = s['player']
@@ -153,26 +156,17 @@ class MonteCarloTreeSearchConnectFour:
         reward = 0
         # el estado final se le coloca al jugador que tiene el board final
         while temp_node is not None:
+            temp_node['N']+=1
 
             
-            parent = temp_node['parent']
-            mover = 0
-
-            if parent is not None:
-                mover = parent['player']
-            else:
-                mover = None
-
             if winner == 0:
                 reward = 0
-            elif mover is None:
-                reward = 0
-            elif mover == winner:
-                reward = 1
             else:
-                reward = -1
-
-            temp_node['N']+=1
+                if winner == temp_node['player']:
+                    reward = 1
+                else:
+                    reward = -1
+                    
             temp_node['W']+=reward
             temp_node['Q']= temp_node['W']/temp_node['N']
                 
