@@ -1,12 +1,11 @@
 #policy.py
 import numpy as np
 import time
+import json
+import os
 from connect4.policy import Policy
 
 
-# -------------------------------
-# Nodo para el árbol de MCTS
-# -------------------------------
 class Node:
     __slots__ = ("board", "player", "untried", "children",
                  "parent", "W", "N", "Q")
@@ -22,16 +21,16 @@ class Node:
         self.Q = 0.0
 
 
-# -------------------------------
-# MCTS básico para Connect4
-# -------------------------------
 class MonteCarloTreeSearchConnectFour:
 
-    def __init__(self, s0: np.ndarray, main_player: int, rng):
+    def __init__(self, s0, main_player, rng, Q_global, N_global):
         self.s0 = s0
         self.main_player = main_player
         self.rng = rng
         self.c = 1.3
+
+        self.Q_global = Q_global
+        self.N_global = N_global
 
         self.root_node = Node(
             board=s0.copy(),
@@ -40,7 +39,10 @@ class MonteCarloTreeSearchConnectFour:
             parent=None
         )
 
-    def legal_actions(self, s: np.ndarray):
+    def encode(self, board, action):
+        return (tuple(board.flatten()), action)
+
+    def legal_actions(self, s):
         return [c for c in range(s.shape[1]) if s[0, c] == 0]
 
     def drop_piece_inplace(self, board, col, player):
@@ -59,6 +61,7 @@ class MonteCarloTreeSearchConnectFour:
 
         for dr, dc in dirs:
             count = 1
+
             r, c = row + dr, col + dc
             while 0 <= r < rows and 0 <= c < cols and board[r, c] == player:
                 count += 1
@@ -73,7 +76,6 @@ class MonteCarloTreeSearchConnectFour:
 
             if count >= 4:
                 return True
-
         return False
 
     def is_winning_move(self, board, col, player):
@@ -82,7 +84,6 @@ class MonteCarloTreeSearchConnectFour:
             if board[r, col] == 0:
                 row = r
                 break
-
         if row == -1:
             return False
 
@@ -103,8 +104,8 @@ class MonteCarloTreeSearchConnectFour:
         start = time.time()
         while time.time() - start < time_limit:
             leaf = self.select()
-            _, new = self.expand(leaf)
-            final, winner = self.simulate(new)
+            leaf, next_node = self.expand(leaf)
+            final, winner = self.simulate(next_node)
             self.backpropagate(final, winner)
 
     def select(self):
@@ -113,17 +114,20 @@ class MonteCarloTreeSearchConnectFour:
             if node.untried or not node.children:
                 return node
 
-            children = list(node.children.values())
-            for c in children:
-                if c.N == 0:
-                    return c
-
+            children = list(node.children.items())
             parent_log = np.log(max(1, node.N))
-            scores = [
-                c.Q + self.c * np.sqrt(parent_log / c.N)
-                for c in children
-            ]
-            node = children[np.argmax(scores)]
+
+            best_a, best_child = max(
+                children,
+                key=lambda kv: (
+                    self.Q_global.get(self.encode(node.board, kv[0]), kv[1].Q)
+                    + self.c * np.sqrt(
+                        parent_log /
+                        self.N_global.get(self.encode(node.board, kv[0]), max(1, kv[1].N))
+                    )
+                )
+            )
+            return best_child
 
     def expand(self, node):
         if not node.untried:
@@ -141,7 +145,6 @@ class MonteCarloTreeSearchConnectFour:
             untried=self.legal_actions(new_board),
             parent=node
         )
-
         node.children[a] = new_node
         return node, new_node
 
@@ -154,38 +157,26 @@ class MonteCarloTreeSearchConnectFour:
             if not actions:
                 return node, 0
 
-            chosen = None
             for a in actions:
                 if self.is_winning_move(board, a, player):
-                    chosen = a
-                    break
+                    return node, player
 
-            if chosen is None:
-                opp = -player
-                for a in actions:
-                    if self.is_winning_move(board, a, opp):
-                        chosen = a
-                        break
+            opp = -player
+            for a in actions:
+                if self.is_winning_move(board, a, opp):
+                    return node, player
 
-            if chosen is None:
-                if 3 in actions:
-                    chosen = 3
-                else:
-                    chosen = int(self.rng.choice(actions))
-
+            chosen = 3 if 3 in actions else int(self.rng.choice(actions))
             row = self.drop_piece_inplace(board, chosen, player)
 
             if self.check_win_from(board, row, chosen, player):
                 return node, player
 
-            if np.all(board[0] != 0):
-                return node, 0
-
             player = -player
 
     def backpropagate(self, leaf, winner):
         node = leaf
-        while node:
+        while node is not None:
             node.N += 1
 
             reward = (
@@ -196,33 +187,57 @@ class MonteCarloTreeSearchConnectFour:
 
             node.W += reward
             node.Q = node.W / node.N
+
+            if node.parent is not None:
+                for action, child in node.parent.children.items():
+                    if child is node:
+                        key = self.encode(node.parent.board, action)
+                        self.N_global[key] = self.N_global.get(key, 0) + 1
+                        self.Q_global[key] = (
+                            self.Q_global.get(key, 0.0)
+                            + (reward - self.Q_global.get(key, 0.0))
+                              / self.N_global[key]
+                        )
+                        break
+
             node = node.parent
 
 
-# ===============================
-#        POLICY FINAL
-# ===============================
 class MyPolicy(Policy):
 
     def __init__(self):
-        init_state = np.zeros((6, 7), dtype=int)
-        rng = np.random.RandomState(42)
+        self.q_file = "q_values.json"
 
-        self.mcts = MonteCarloTreeSearchConnectFour(
-            s0=init_state,
-            main_player=-1,
-            rng=rng
-        )
+        if os.path.exists(self.q_file):
+            with open(self.q_file, "r") as f:
+                data = json.load(f)
+                self.Q_global = {eval(k): v for k, v in data.get("Q", {}).items()}
+                self.N_global = {eval(k): v for k, v in data.get("N", {}).items()}
+        else:
+            self.Q_global = {}
+            self.N_global = {}
+
+        self.mount()
 
     def mount(self, *args, **kwargs):
         init_state = np.zeros((6, 7), dtype=int)
-        rng = np.random.RandomState(42)
+        rng = np.random.RandomState()
 
         self.mcts = MonteCarloTreeSearchConnectFour(
             s0=init_state,
             main_player=-1,
-            rng=rng
+            rng=rng,
+            Q_global=self.Q_global,
+            N_global=self.N_global
         )
+
+    def finalize(self):
+        data = {
+            "Q": {str(k): v for k, v in self.Q_global.items()},
+            "N": {str(k): v for k, v in self.N_global.items()}
+        }
+        with open(self.q_file, "w") as f:
+            json.dump(data, f, indent=4)
 
     def infer_player(self, s):
         ones = np.sum(s == 1)
@@ -245,16 +260,9 @@ class MyPolicy(Policy):
             if self.mcts.is_winning_move(s, a, opp):
                 return a
 
-        if np.all(s == 0) and 3 in legal:
-            return 3
-
         self.mcts.set_root(s, player)
         self.mcts.run(time_limit=0.05)
 
         root = self.mcts.root_node
-        if not root.children:
-            return int(self.mcts.rng.choice(legal))
-
         best = max(root.children, key=lambda a: root.children[a].N)
         return int(best)
-
