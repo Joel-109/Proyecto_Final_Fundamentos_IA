@@ -4,7 +4,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), "extern_policies"))
 # ====== IMPORTA TUS POLÍTICAS AQUÍ ======
-from MyPolicy import MyPolicy
+from Policy_tournament import MyPolicy
 from RandomPolicy import RandomPolicy
 #from random_policy import RandomPolicy    # ejemplo si tienes otra política
 # ========================================
