@@ -180,7 +180,7 @@ class MonteCarloTreeSearchConnectFour:
             node.N += 1
 
             reward = (
-                1.0 if winner == self.main_player else
+                1.0 if winner == node.player else
                 -1.0 if winner != 0 else
                 0.0
             )
