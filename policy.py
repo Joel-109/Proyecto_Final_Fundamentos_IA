@@ -263,7 +263,7 @@ class MyPolicy(Policy):
         self.mcts.main_player = player
 
         self.mcts.set_root(s, player)
-        self.mcts.run(time_limit=0.08)
+        self.mcts.run(time_limit=0.05)
 
         root = self.mcts.root_node
         best = max(root.children, key=lambda a: root.children[a].N)
