@@ -1,35 +1,29 @@
+#mcts.py
 import numpy as np
 import time 
 
 class MonteCarloTreeSearchConnectFour:
 
-    def __init__(self, s0 : np.ndarray,main_player : int, rng : np.random.RandomState):
-        '''
-            Estructura de Nodo:
-            node = {
-                "untried": lista de acciones sin intentar
-                "board": es el estado del tablero
-                "player": el jugador 
-                "W": Cantidad de veces que ha ganado
-                "N": Cantidad de visitas a ese nodo
-            }
-        '''
+    def __init__(self, s0: np.ndarray, main_player: int, rng: np.random.RandomState, Q_global=None, N_global=None):
         print("Inicializó el árbol")
+
         self.s0 = s0
-        self.Q = {}
-        self.N = {}
         self.main_player = main_player
         self.rng = rng
         self.c = np.sqrt(2)/2
+
+        self.Q = Q_global if Q_global is not None else {}
+        self.N = N_global if N_global is not None else {}
+
         self.root_node = {
-            "main":True,
-            "untried": self.legal_actions(s0), 
-            "board": s0, 
-            "player":main_player, 
-            "children":{},
-            "Q":0,
-            "N":0,
-            "W":0,
+            "main": True,
+            "untried": self.legal_actions(s0),
+            "board": s0,
+            "player": main_player,
+            "children": {},
+            "Q": 0,
+            "N": 0,
+            "W": 0,
             "parent": None
         }
 

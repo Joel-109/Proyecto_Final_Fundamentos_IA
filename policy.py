@@ -1,5 +1,8 @@
+#policy.py
 import numpy as np
 import time
+import json
+import os
 from connect4.policy import Policy
 
 
@@ -25,11 +28,16 @@ class Node:
 
 class MonteCarloTreeSearchConnectFour:
 
-    def __init__(self, s0: np.ndarray, main_player: int, rng: np.random.RandomState):
+    def __init__(self, s0: np.ndarray, main_player: int, rng: np.random.RandomState,
+                 Q_global=None, N_global=None):
         self.s0 = s0
         self.main_player = main_player
         self.rng = rng
         self.c = 1.3
+
+        # tablas globales
+        self.Q_global = Q_global if Q_global is not None else {}
+        self.N_global = N_global if N_global is not None else {}
 
         self.root_node = Node(
             board=s0.copy(),
@@ -37,6 +45,10 @@ class MonteCarloTreeSearchConnectFour:
             untried=self.legal_actions(s0),
             parent=None
         )
+
+    # codificación única por estado + acción
+    def encode(self, board, action):
+        return (tuple(board.flatten()), action)
 
     # ------------- utilidades del tablero -------------
     def legal_actions(self, s: np.ndarray):
@@ -75,10 +87,6 @@ class MonteCarloTreeSearchConnectFour:
         return False
 
     def is_winning_move(self, board, col, player):
-        """
-        Comprueba si jugar en `col` hace ganar al jugador `player`.
-        Modifica y revierte el tablero internamente.
-        """
         row = -1
         for r in range(board.shape[0] - 1, -1, -1):
             if board[r, col] == 0:
@@ -118,17 +126,21 @@ class MonteCarloTreeSearchConnectFour:
             if not node.children:
                 return node
 
-            children = list(node.children.values())
-            for child in children:
-                if child.N == 0:
-                    return child
+            children = list(node.children.items())
 
+            # usar Q_global cuando exista
             parent_log = np.log(max(1, node.N))
-            scores = [
-                child.Q + self.c * np.sqrt(parent_log / child.N)
-                for child in children
-            ]
-            node = children[np.argmax(scores)]
+            best_a, best_child = max(
+                children,
+                key=lambda kv: (
+                    self.Q_global.get(self.encode(node.board, kv[0]), kv[1].Q)
+                    + self.c * np.sqrt(
+                        parent_log /
+                        self.N_global.get(self.encode(node.board, kv[0]), max(1, kv[1].N))
+                    )
+                )
+            )
+            return best_child
 
     def expand(self, node):
         if not node.untried:
@@ -158,7 +170,6 @@ class MonteCarloTreeSearchConnectFour:
             if not actions:
                 return node, 0
 
-            # 1) ganar si se puede
             chosen = None
             for a in actions:
                 if self.is_winning_move(board, a, player):
@@ -166,7 +177,6 @@ class MonteCarloTreeSearchConnectFour:
                     break
 
             if chosen is None:
-                # 2) bloquear al rival si gana
                 opp = -player
                 for a in actions:
                     if self.is_winning_move(board, a, opp):
@@ -174,7 +184,6 @@ class MonteCarloTreeSearchConnectFour:
                         break
 
             if chosen is None:
-                # 3) priorizar centro
                 if 3 in actions:
                     chosen = 3
                 else:
@@ -195,6 +204,7 @@ class MonteCarloTreeSearchConnectFour:
         node = leaf
         while node is not None:
             node.N += 1
+
             reward = (
                 1.0 if winner == self.main_player else
                 -1.0 if winner != 0 else
@@ -202,6 +212,19 @@ class MonteCarloTreeSearchConnectFour:
             )
             node.W += reward
             node.Q = node.W / node.N
+
+            if node.parent is not None:
+                for action, child in node.parent.children.items():
+                    if child is node:
+                        key = self.encode(node.parent.board, action)
+                        self.N_global[key] = self.N_global.get(key, 0) + 1
+                        self.Q_global[key] = (
+                            self.Q_global.get(key, 0.0)
+                            + (reward - self.Q_global.get(key, 0.0))
+                              / self.N_global[key]
+                        )
+                        break
+
             node = node.parent
 
 
@@ -211,68 +234,79 @@ class MonteCarloTreeSearchConnectFour:
 class MyPolicy(Policy):
 
     def __init__(self):
-        # asegurar que el autograder no falle aunque no llame mount()
+        self.q_file = "q_values.json"
+
+        # ✅ cargar memoria si existe
+        if os.path.exists(self.q_file):
+            with open(self.q_file, "r") as f:
+                data = json.load(f)
+                self.Q_global = {eval(k): v for k, v in data.get("Q", {}).items()}
+                self.N_global = {eval(k): v for k, v in data.get("N", {}).items()}
+        else:
+            self.Q_global = {}
+            self.N_global = {}
+
         init_state = np.zeros((6, 7), dtype=int)
         rng = np.random.RandomState(42)
 
         self.mcts = MonteCarloTreeSearchConnectFour(
             s0=init_state,
             main_player=-1,
-            rng=rng
+            rng=rng,
+            Q_global=self.Q_global,
+            N_global=self.N_global
         )
 
-    def mount(self, *args, **kwargs):
-        init_state = np.zeros((6, 7), dtype=int)
-        rng = np.random.RandomState(42)
-
-        self.mcts = MonteCarloTreeSearchConnectFour(
-            s0=init_state,
-            main_player=-1,
-            rng=rng
-        )
+    def finalize(self):
+        data = {
+            "Q": {str(k): v for k, v in self.Q_global.items()},
+            "N": {str(k): v for k, v in self.N_global.items()}
+        }
+        with open(self.q_file, "w") as f:
+            json.dump(data, f, indent=4)
 
     def infer_player(self, s: np.ndarray) -> int:
         ones = np.sum(s == 1)
         negs = np.sum(s == -1)
-        # turno del que haya jugado menos
         return 1 if ones == negs else -1
 
     def act(self, s: np.ndarray) -> int:
         player = self.infer_player(s)
         legal = self.mcts.legal_actions(s)
 
-        # seguridad: si por alguna razón no hay jugadas legales
         if not legal:
             return 0
 
-        # ===== 1) Jugada ganadora inmediata =====
         for a in legal:
             if self.mcts.is_winning_move(s, a, player):
                 return a
 
-        # ===== 2) Bloquear jugada ganadora inmediata del rival =====
         opp = -player
         for a in legal:
             if self.mcts.is_winning_move(s, a, opp):
                 return a
 
-        # ===== 3) Heurísticas de centro (apertura y control) =====
-        # Tablero vacío → jugar centro
         if np.all(s == 0) and 3 in legal:
             return 3
-        # Si soy el jugador 1 y el centro está libre, me conviene
-        if player == 1 and 3 in legal and s[0, 3] == 0:
-            return 3
 
-        # ===== 4) MCTS para el resto de decisiones =====
         self.mcts.set_root(s, player)
         self.mcts.run(time_limit=0.05)
 
         root = self.mcts.root_node
-
-        # fallback: si no se exploró nada, jugar random legal
         if not root.children:
             return int(self.mcts.rng.choice(legal))
 
         best_a = max(root.children, key=lambda a: root.children[a].N)
         return int(best_a)
+
+def mount(self, *args, **kwargs):
+    init_state = np.zeros((6, 7), dtype=int)
+    rng = np.random.RandomState(42)
+
+    self.mcts = MonteCarloTreeSearchConnectFour(
+        s0=init_state,
+        main_player=-1,
+        rng=rng,
+        Q_global=self.Q_global,
+        N_global=self.N_global
+    )
