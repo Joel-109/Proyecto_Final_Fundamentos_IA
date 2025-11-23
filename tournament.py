@@ -163,3 +163,7 @@ if __name__ == "__main__":
     print(f"Policy A ganó: {results['A']} veces")
     print(f"Policy B ganó: {results['B']} veces")
     print(f"Empates: {results['draw']}")
+
+    saver = MyPolicy()
+    saver.finalize()
+    print("\n q_values.json guardado exitosamente")
