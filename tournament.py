@@ -98,28 +98,20 @@ def play_game(policy_red, policy_yellow):
 # TORNEO ENTRE DOS POLICIES
 # ---------------------------------
 def tournament(policyA_class, policyB_class, games=50):
-    """
-    Ejecuta 'games' partidas entre policyA y policyB.
-    policyA juega como RED en las partidas pares
-    y como YELLOW en las impares.
-    """
 
     results = {"A": 0, "B": 0, "draw": 0}
 
-    for i in range(games):
+    pA = policyA_class()
+    pB = policyB_class()
 
+    for i in range(games):
         if i % 2 == 0:
             # A como red
-            pA = policyA_class()
-            pB = policyB_class()
             res = play_game(pA, pB)
         else:
             # B como red
-            pA = policyA_class()
-            pB = policyB_class()
             res = play_game(pB, pA)
 
-            # invertir resultado para asignarlo correctamente
             if res == 1:
                 res = -1
             elif res == -1:
@@ -132,7 +124,11 @@ def tournament(policyA_class, policyB_class, games=50):
         else:
             results["draw"] += 1
 
+
+    pA.finalize()
+
     return results
+
 
 
 
