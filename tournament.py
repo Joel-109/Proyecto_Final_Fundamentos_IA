@@ -129,6 +129,54 @@ def tournament(policyA_class, policyB_class, games=50):
 
     return results
 
+def column_usage(policy_class, games=50):
+    """
+    Devuelve un array de tamaño 7 indicando
+    cuántas veces la política jugó en cada columna.
+    Solo mide a policy_class (como jugador RED).
+    """
+    col_usage = [0] * 7
+
+    for g in range(games):
+        board = np.zeros((6,7), dtype=int)
+        policy = policy_class()
+        policy.mount()
+        player = 1  # siempre medimos política como RED
+
+        while True:
+            action = policy.act(board.copy())
+
+            # registrar columna usada por el agente
+            col_usage[action] += 1
+
+            # ejecutar jugada
+            for r in range(5, -1, -1):
+                if board[r, action] == 0:
+                    board[r, action] = player
+                    row = r
+                    break
+
+            # victoria / empate
+            if check_win(board, row, action, player):
+                break
+            if np.all(board[0] != 0):
+                break
+
+            # el oponente hace jugada random
+            legal = [c for c in range(7) if board[0, c] == 0]
+            opp_action = np.random.choice(legal)
+            for r in range(5, -1, -1):
+                if board[r, opp_action] == 0:
+                    board[r, opp_action] = -player
+                    break
+
+            # victoria o empate del rival
+            if check_win(board, r, opp_action, -player):
+                break
+            if np.all(board[0] != 0):
+                break
+
+    return col_usage
 
 
 
@@ -138,6 +186,7 @@ def run_tournament(policyA_class, policyB_class, games=50):
     Retorna directamente los resultados sin pedir input ni imprimir.
     """
     return tournament(policyA_class, policyB_class, games)
+
 
 
 # ---------------------------------
