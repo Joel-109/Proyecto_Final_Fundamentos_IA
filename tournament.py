@@ -128,6 +128,107 @@ def tournament(policyA_class, policyB_class, games=50):
     pA.finalize()
 
     return results
+def tournament_metrics_fast(policyA_class, policyB_class, games=30):
+
+    pA = policyA_class()
+    pB = policyB_class()
+
+    wins = 0
+    losses = 0
+    draws = 0
+
+    lengths = []
+    fast_wins = 0
+    mid_wins = 0
+    late_wins = 0
+    sequence = []
+
+    for i in range(games):
+
+        # NO recrear políticas en cada iteración: MUY LENTO
+        pA.mount()
+        pB.mount()
+
+        if i % 2 == 0:
+            res, l = play_game_with_length(pA, pB)
+        else:
+            res, l = play_game_with_length(pB, pA)
+            if res == 1:
+                res = -1
+            elif res == -1:
+                res = 1
+
+        lengths.append(l)
+
+        if l < 10:
+            fast_wins += 1
+        elif l < 20:
+            mid_wins += 1
+        else:
+            late_wins += 1
+
+        sequence.append(res)
+
+        if res == 1:
+            wins += 1
+        elif res == -1:
+            losses += 1
+        else:
+            draws += 1
+
+    dominance = (wins - losses) / games
+    stability = np.var(sequence)
+    momentum = np.mean(sequence[-(games//2):]) - np.mean(sequence[:games//2])
+
+    return {
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
+        "lengths": lengths,
+        "avg_length": np.mean(lengths),
+        "fast_games": fast_wins,
+        "mid_games": mid_wins,
+        "late_games": late_wins,
+        "dominance": dominance,
+        "stability": float(stability),
+        "momentum": float(momentum),
+        "sequence": sequence
+    }
+
+def play_game_with_length(policy_red, policy_yellow):
+    board = np.zeros((6,7), dtype=int)
+
+    # MONTA UNA SOLA VEZ (como play_game original)
+    policy_red.mount()
+    policy_yellow.mount()
+
+    player = 1
+    turns = 0
+
+    while True:
+        policy = policy_red if player == 1 else policy_yellow
+
+        # acción del agente
+        action = policy.act(board.copy())
+        turns += 1
+
+        if action not in legal_actions(board):
+            return -player, turns
+
+        # colocar pieza
+        row = drop_piece(board, action, player)
+
+        # victoria
+        if check_win(board, row, action, player):
+            return player, turns
+
+        # empate
+        if np.all(board[0] != 0):
+            return 0, turns
+
+        # cambiar jugador
+        player = -player
+
 
 def column_usage(policy_class, games=50):
     """
