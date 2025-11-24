@@ -128,6 +128,7 @@ def tournament(policyA_class, policyB_class, games=50):
     pA.finalize()
 
     return results
+
 def tournament_metrics_fast(policyA_class, policyB_class, games=30):
 
     pA = policyA_class()
@@ -144,10 +145,6 @@ def tournament_metrics_fast(policyA_class, policyB_class, games=30):
     sequence = []
 
     for i in range(games):
-
-        # NO recrear políticas en cada iteración: MUY LENTO
-        pA.mount()
-        pB.mount()
 
         if i % 2 == 0:
             res, l = play_game_with_length(pA, pB)
